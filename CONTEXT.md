@@ -15,3 +15,7 @@ _Avoid_: Template, preset
 **Launcher**:
 A thin script or profile entry that starts the wizard without containing the wizard's core implementation.
 _Avoid_: Main script, wrapper
+
+**Agent Files**:
+Generated repository files that give Codex and other coding agents project-specific operating instructions, domain context, and maintenance guidance.
+_Avoid_: AI files, bot docs

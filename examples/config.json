@@ -1,0 +1,10 @@
+{
+  "defaultProjectsFolder": "C:\\Users\\user\\Projects",
+  "preferredLicense": "MIT",
+  "defaultGitHubVisibility": "private",
+  "openVSCode": true,
+  "initializeGit": true,
+  "createInitialCommit": true,
+  "downloadGitignoreTemplates": true,
+  "createAgentFiles": true
+}
