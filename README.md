@@ -54,7 +54,13 @@ From this repo:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-The installer copies the module to:
+The installer copies the module next to the active PowerShell profile's module folder. For Windows PowerShell 5.1 that is usually:
+
+```text
+$HOME\Documents\WindowsPowerShell\Modules\NewProjectWizard\0.1.0
+```
+
+For PowerShell 7+, that is usually:
 
 ```text
 $HOME\Documents\PowerShell\Modules\NewProjectWizard\0.1.0
@@ -67,7 +73,7 @@ Import-Module NewProjectWizard
 Set-Alias newproj New-Project
 ```
 
-Restart PowerShell after installation, or run the two profile lines manually in your current session.
+Restart PowerShell after installation, or run the two profile lines manually in your current session. If you launch the installer as `powershell -File .\install.ps1`, it runs in a separate PowerShell process and cannot define `newproj` in the parent shell that launched it.
 
 Manual install:
 
@@ -99,11 +105,13 @@ Parameterized:
 New-Project `
   -Name my-api `
   -Type Node `
-  -Path C:\Users\kleve\Projects `
+  -Path C:\Users\your-name\Projects `
   -Description "API service" `
   -NoGitHub `
   -NoCode
 ```
+
+`-Path` is normally the parent folder where the project directory should be created. If the path already ends with the project name, the wizard treats it as the final project directory and does not append the name again.
 
 Preview major actions without creating the project:
 
@@ -112,6 +120,29 @@ New-Project -Name scratch -Type Empty -Path C:\Temp -NoLicense -NoAgentFiles -No
 ```
 
 ## Configuration
+
+For repository-local configuration, copy the environment template and edit it for your machine:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+The wizard reads these variables from an existing process environment first, then from `.env` in the current directory:
+
+```dotenv
+NPW_DEFAULT_PROJECTS_FOLDER=C:\Users\your-name\Projects
+NPW_PREFERRED_LICENSE=MIT
+NPW_DEFAULT_GITHUB_VISIBILITY=private
+NPW_OPEN_VSCODE=true
+NPW_INITIALIZE_GIT=true
+NPW_CREATE_INITIAL_COMMIT=true
+NPW_DOWNLOAD_GITIGNORE_TEMPLATES=true
+NPW_CREATE_AGENT_FILES=true
+```
+
+Boolean values must be `true` or `false`. The local `.env` file is ignored by Git; `.env.example` is the portable template.
+
+The wizard also reads configuration from:
 
 The wizard reads configuration from:
 
@@ -125,7 +156,7 @@ Example:
 
 ```json
 {
-  "defaultProjectsFolder": "C:\\Users\\kleve\\Projects",
+  "defaultProjectsFolder": "C:\\Users\\your-name\\Projects",
   "preferredLicense": "MIT",
   "defaultGitHubVisibility": "private",
   "openVSCode": true,
@@ -136,7 +167,7 @@ Example:
 }
 ```
 
-Command parameters override configuration for that run.
+Precedence is: command parameters, existing process environment, `.env`, user `config.json`, then built-in defaults.
 
 ## Generated Agent Files
 

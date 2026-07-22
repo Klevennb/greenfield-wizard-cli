@@ -7,7 +7,9 @@ param(
 Set-StrictMode -Version Latest
 
 $source = Join-Path -Path $PSScriptRoot -ChildPath 'src/NewProjectWizard'
-$destinationRoot = Join-Path -Path $HOME -ChildPath 'Documents/PowerShell/Modules/NewProjectWizard'
+$profilePath = $PROFILE.CurrentUserCurrentHost
+$profileRoot = Split-Path -Parent $profilePath
+$destinationRoot = Join-Path -Path $profileRoot -ChildPath 'Modules/NewProjectWizard'
 $destination = Join-Path -Path $destinationRoot -ChildPath '0.1.0'
 
 if (-not (Test-Path -LiteralPath $source)) {
@@ -31,10 +33,11 @@ if ($PSCmdlet.ShouldProcess($destination, 'Install NewProjectWizard module')) {
 
 if ($NoProfileUpdate) {
     Write-Host 'Skipped PowerShell profile update.' -ForegroundColor Yellow
+    Write-Host 'Restart PowerShell or import the module manually in the current session:' -ForegroundColor Yellow
+    Write-Host 'Import-Module NewProjectWizard; Set-Alias newproj New-Project'
     return
 }
 
-$profilePath = $PROFILE.CurrentUserCurrentHost
 $snippet = @'
 
 # New Project Wizard
@@ -66,4 +69,7 @@ if ($PSCmdlet.ShouldProcess($profilePath, 'Add newproj alias to PowerShell profi
     else {
         Write-Host 'PowerShell profile already contains a newproj alias.' -ForegroundColor Yellow
     }
+
+    Write-Host 'Restart PowerShell or import the module manually in the current session:' -ForegroundColor Yellow
+    Write-Host 'Import-Module NewProjectWizard; Set-Alias newproj New-Project'
 }

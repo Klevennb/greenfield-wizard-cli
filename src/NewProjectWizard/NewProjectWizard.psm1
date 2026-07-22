@@ -83,6 +83,116 @@ function Get-NpwDefaultConfig {
     }
 }
 
+function Get-NpwEnvironmentVariableMap {
+    [ordered]@{
+        NPW_DEFAULT_PROJECTS_FOLDER       = @{ ConfigKey = 'defaultProjectsFolder'; Type = 'string' }
+        NPW_PREFERRED_LICENSE             = @{ ConfigKey = 'preferredLicense'; Type = 'license' }
+        NPW_DEFAULT_GITHUB_VISIBILITY     = @{ ConfigKey = 'defaultGitHubVisibility'; Type = 'visibility' }
+        NPW_OPEN_VSCODE                   = @{ ConfigKey = 'openVSCode'; Type = 'boolean' }
+        NPW_INITIALIZE_GIT                = @{ ConfigKey = 'initializeGit'; Type = 'boolean' }
+        NPW_CREATE_INITIAL_COMMIT         = @{ ConfigKey = 'createInitialCommit'; Type = 'boolean' }
+        NPW_DOWNLOAD_GITIGNORE_TEMPLATES  = @{ ConfigKey = 'downloadGitignoreTemplates'; Type = 'boolean' }
+        NPW_CREATE_AGENT_FILES            = @{ ConfigKey = 'createAgentFiles'; Type = 'boolean' }
+    }
+}
+
+function Read-NpwDotEnv {
+    param(
+        [string]$Path = (Join-Path -Path (Get-Location).Path -ChildPath '.env')
+    )
+
+    $values = @{}
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $values
+    }
+
+    $recognizedNames = Get-NpwEnvironmentVariableMap
+    $lineNumber = 0
+    foreach ($line in (Get-Content -LiteralPath $Path -ErrorAction Stop)) {
+        $lineNumber++
+        if ([string]::IsNullOrWhiteSpace($line) -or $line -match '^\s*#') {
+            continue
+        }
+
+        if ($line -notmatch '^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') {
+            if ($line -match '^\s*(?:export\s+)?(NPW_[A-Za-z0-9_]*)') {
+                throw "Malformed .env entry for '$($Matches[1])' at '$Path' line $lineNumber. Expected NAME=value."
+            }
+            continue
+        }
+
+        $name = $Matches[1]
+        if (-not $recognizedNames.Contains($name)) {
+            continue
+        }
+
+        $value = $Matches[2]
+        if ($value.Length -ge 1 -and ($value[0] -eq '"' -or $value[0] -eq "'")) {
+            $quote = $value[0]
+            if ($value.Length -lt 2 -or $value[$value.Length - 1] -ne $quote) {
+                throw "Malformed quoted value for '$name' at '$Path' line $lineNumber."
+            }
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+
+        $values[$name] = $value
+    }
+
+    return $values
+}
+
+function ConvertFrom-NpwEnvironmentValue {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [AllowEmptyString()][string]$Value,
+        [Parameter(Mandatory)][string]$Type
+    )
+
+    switch ($Type) {
+        'boolean' {
+            if ($Value -ieq 'true') { return $true }
+            if ($Value -ieq 'false') { return $false }
+            throw "Environment variable $Name must be 'true' or 'false'; received '$Value'."
+        }
+        'license' {
+            if ($Value -notin @('MIT', 'Apache-2.0', 'GPL-3.0', 'BSD-3-Clause', 'Unlicense')) {
+                throw "Environment variable $Name has unsupported license '$Value'."
+            }
+        }
+        'visibility' {
+            if ($Value -notin @('private', 'public')) {
+                throw "Environment variable $Name must be 'private' or 'public'; received '$Value'."
+            }
+        }
+        'string' {
+            if ([string]::IsNullOrWhiteSpace($Value)) {
+                throw "Environment variable $Name cannot be empty."
+            }
+        }
+    }
+
+    return $Value
+}
+
+function Get-NpwEnvironmentConfig {
+    param(
+        [string]$DotEnvPath = (Join-Path -Path (Get-Location).Path -ChildPath '.env')
+    )
+
+    $dotEnv = Read-NpwDotEnv -Path $DotEnvPath
+    $config = @{}
+    foreach ($entry in (Get-NpwEnvironmentVariableMap).GetEnumerator()) {
+        $value = [Environment]::GetEnvironmentVariable($entry.Key, 'Process')
+        if ($null -eq $value -and $dotEnv.ContainsKey($entry.Key)) {
+            $value = $dotEnv[$entry.Key]
+        }
+        if ($null -ne $value) {
+            $config[$entry.Value.ConfigKey] = ConvertFrom-NpwEnvironmentValue -Name $entry.Key -Value $value -Type $entry.Value.Type
+        }
+    }
+    return $config
+}
+
 function ConvertTo-NpwHashtable {
     param(
         [Parameter(Mandatory)]
@@ -125,7 +235,18 @@ function Get-NpwConfig {
     $defaults = Get-NpwDefaultConfig
     $configPath = Get-NpwConfigPath
 
-    if (-not (Test-Path -LiteralPath $configPath)) {
+    try {
+        $configExists = Test-Path -LiteralPath $configPath -ErrorAction Stop
+    }
+    catch {
+        if (-not $CreateIfMissing) {
+            return Merge-NpwConfig -Defaults $defaults -UserConfig (Get-NpwEnvironmentConfig)
+        }
+
+        throw "Failed to access configuration at '$configPath': $($_.Exception.Message)"
+    }
+
+    if (-not $configExists) {
         if ($CreateIfMissing) {
             $configRoot = Split-Path -Parent $configPath
             if (-not (Test-Path -LiteralPath $configRoot)) {
@@ -135,17 +256,18 @@ function Get-NpwConfig {
             $defaults | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $configPath -Encoding utf8
         }
 
-        return $defaults
+        return Merge-NpwConfig -Defaults $defaults -UserConfig (Get-NpwEnvironmentConfig)
     }
 
     try {
         $raw = Get-Content -LiteralPath $configPath -Raw -ErrorAction Stop
         if ([string]::IsNullOrWhiteSpace($raw)) {
-            return $defaults
+            return Merge-NpwConfig -Defaults $defaults -UserConfig (Get-NpwEnvironmentConfig)
         }
 
         $userConfig = ConvertTo-NpwHashtable -InputObject ($raw | ConvertFrom-Json -ErrorAction Stop)
-        return Merge-NpwConfig -Defaults $defaults -UserConfig $userConfig
+        $config = Merge-NpwConfig -Defaults $defaults -UserConfig $userConfig
+        return Merge-NpwConfig -Defaults $config -UserConfig (Get-NpwEnvironmentConfig)
     }
     catch {
         throw "Failed to read configuration at '$configPath': $($_.Exception.Message)"
@@ -358,6 +480,11 @@ function Resolve-NpwProjectPath {
     )
 
     $expandedBase = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BasePath)
+    $baseLeaf = Split-Path -Path $expandedBase -Leaf
+    if ($baseLeaf -ieq $Name) {
+        return $expandedBase
+    }
+
     return Join-Path -Path $expandedBase -ChildPath $Name
 }
 
@@ -1169,7 +1296,11 @@ function New-Project {
     }
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
-        $Path = Read-NpwInput -Prompt 'Create in' -Default $config.defaultProjectsFolder -Validator { param($value) -not [string]::IsNullOrWhiteSpace($value) } -ValidationMessage 'Enter a folder path.'
+        $Path = Read-NpwInput -Prompt 'Parent folder' -Default $config.defaultProjectsFolder -Validator { param($value) -not [string]::IsNullOrWhiteSpace($value) } -ValidationMessage 'Enter a folder path.'
+        if ($Path -ieq $Name) {
+            Write-NpwWarning "Project name is already '$Name'; using the default parent folder."
+            $Path = $config.defaultProjectsFolder
+        }
     }
 
     if ([string]::IsNullOrWhiteSpace($Type)) {

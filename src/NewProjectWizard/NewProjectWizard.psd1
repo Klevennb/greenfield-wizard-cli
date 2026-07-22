@@ -1,7 +1,7 @@
 @{
     RootModule        = 'NewProjectWizard.psm1'
     ModuleVersion     = '0.1.0'
-    GUID              = '91f0a2db-9281-470b-9d0a-aaaa'
+    GUID              = '91f0a2db-9281-470b-9d0a-fdb238957bd7'
     Author            = 'New Project Wizard'
     CompanyName       = 'Unknown'
     Copyright         = '(c) 2026. All rights reserved.'
